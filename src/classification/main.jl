@@ -52,7 +52,7 @@ end
 function _convertOOB(
         node   :: treeclassifier.NodeMeta{S},
         list   :: AbstractVector{T},
-        labels :: AbstractVector{T}
+        labels :: AbstractVector{T},
         oob    :: AbstractMatrix{S}) where {S, T}
 
     tree = _convert(node, list, labels)
