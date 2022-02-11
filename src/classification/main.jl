@@ -53,10 +53,11 @@ function _convertOOB(
         node   :: treeclassifier.NodeMeta{S},
         list   :: AbstractVector{T},
         labels :: AbstractVector{T},
+        inds   :: AbstractVector{Int},
         oob    :: AbstractMatrix{S}) where {S, T}
 
     tree = _convert(node, list, labels)
-    return TreeOOB{S, T}(tree, oob)
+    return TreeOOB{S, T}(tree, inds, oob)
 end
 
 ################################################################################
@@ -83,6 +84,7 @@ function build_stump(
 end
 
 function build_tree(
+        inds                :: AbstractVector{Int},
         labels              :: AbstractVector{T},
         features            :: AbstractMatrix{S},
         n_subfeatures        = 0,
@@ -102,8 +104,8 @@ function build_tree(
 
     rng = mk_rng(rng)::Random.AbstractRNG
     t = treeclassifier.fit(
-        X                   = features,
-        Y                   = labels,
+        X                   = features[inds, :],
+        Y                   = labels[inds],
         W                   = nothing,
         loss                = loss,
         max_features        = Int(n_subfeatures),
@@ -114,7 +116,8 @@ function build_tree(
         rng                 = rng)
 
     return _convertOOB(t.root, t.list, labels[t.labels],
-        features[setdiff(collect(1:length(labels)), t.labels)])
+        setdiff(collect(1:length(labels)), inds),
+        features[setdiff(collect(1:length(labels)), inds),:])
 end
 
 function prune_tree(tree::LeafOrNode{S, T}, purity_thresh=1.0) where {S, T}
@@ -239,8 +242,9 @@ function build_forest(
         Threads.@threads for i in 1:n_trees
             inds = rand(rng, 1:t_samples, n_samples)
             forest[i] = build_tree(
-                labels[inds],
-                features[inds,:],
+                inds,
+                labels,
+                features,
                 n_subfeatures,
                 max_depth,
                 min_samples_leaf,
@@ -254,8 +258,9 @@ function build_forest(
             Random.seed!(rng + i)
             inds = rand(1:t_samples, n_samples)
             forest[i] = build_tree(
-                labels[inds],
-                features[inds,:],
+                inds,
+                labels,
+                features,
                 n_subfeatures,
                 max_depth,
                 min_samples_leaf,
@@ -266,8 +271,7 @@ function build_forest(
     else
         throw("rng must of be type Integer or Random.AbstractRNG")
     end
-
-    return EnsembleOOB{S, T}(forest)
+    return EnsembleOOB{S, T}(length(labels), features, forest)
 end
 
 function apply_forest(forest::Ensemble{S, T}, features::AbstractVector{S}) where {S, T}
@@ -294,17 +298,27 @@ function apply_forest(forest::Ensemble{S, T}, features::AbstractMatrix{S}) where
 end
 
 function apply_forest(forest::EnsembleOOB{S, T}) where {S, T}
-    n_trees = length(forest)
-    votes = Array{T}(undef, n_trees)
-    for i in 1:n_trees
-        votes[i] = apply_tree(forest.trees[i])
+    n_samp = forest.nsamp
+    n_trees = length(forest.trees)
+    predictions = Array{T}(undef, n_samp)
+    for i in 1:n_samp
+        votes = Array{T}(undef, n_trees)
+        len = 0
+        obs_feat = forest.features[i, :]
+        for j in 1:n_trees
+            if i in forest.trees[j].inds
+                len += 1
+                votes[len] = apply_tree(forest.trees[j].tree, obs_feat)
+            end
+        end
+        trunc_votes = votes[1:len]
+        if T <: Float64
+            predictions[i] = mean(trunc_votes)
+        else
+            predictions[i] = majority_vote(trunc_votes)
+        end
     end
-
-    if T <: Float64
-        return mean(votes)
-    else
-        return majority_vote(votes)
-    end
+    return predictions
 end
 
 """    apply_forest_proba(forest::Ensemble, features, col_labels::AbstractVector)

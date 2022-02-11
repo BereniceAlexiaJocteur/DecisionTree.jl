@@ -42,6 +42,7 @@ const LeafOrNode{S, T} = Union{Leaf{T}, Node{S, T}}
 
 struct TreeOOB{S, T}
     tree     :: LeafOrNode{S, T}
+    inds     :: AbstractVector{Int}
     oobfeat  :: AbstractMatrix{S}
 end
 
@@ -50,7 +51,9 @@ struct Ensemble{S, T}
 end
 
 struct EnsembleOOB{S, T}
-    trees :: Vector{TreeOOB{S, T}}
+    nsamp    :: Int
+    features :: AbstractMatrix{S}
+    trees    :: Vector{TreeOOB{S, T}}
 end
 
 is_leaf(l::Leaf) = true
