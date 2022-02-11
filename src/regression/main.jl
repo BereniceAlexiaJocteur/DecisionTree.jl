@@ -10,6 +10,15 @@ function _convert(node::treeregressor.NodeMeta{S}, labels::Array{T}) where {S, T
     end
 end
 
+function _convertOOB(
+        node   :: treeregressor.NodeMeta{S},
+        labels :: Array{T}
+        oob    :: AbstractMatrix{S}) where {S, T}
+
+    tree = _convert(node, labels)
+    return TreeOOB{S, T}(tree, oob)
+end
+
 function build_stump(labels::AbstractVector{T}, features::AbstractMatrix{S}; rng = Random.GLOBAL_RNG) where {S, T <: Float64}
     return build_tree(labels, features, 0, 1)
 end
@@ -43,7 +52,8 @@ function build_tree(
         min_purity_increase = Float64(min_purity_increase),
         rng                 = rng)
 
-    return _convert(t.root, labels[t.labels])
+    return _convertOOB(t.root, labels[t.labels],
+        features[setdiff(collect(1:length(labels)), t.labels)])
 end
 
 function build_forest(
@@ -73,7 +83,7 @@ function build_forest(
     t_samples = length(labels)
     n_samples = floor(Int, partial_sampling * t_samples)
 
-    forest = Vector{LeafOrNode{S, T}}(undef, n_trees)
+    forest = Vector{TreeOOB{S, T}}(undef, n_trees)
 
     if rng isa Random.AbstractRNG
         Threads.@threads for i in 1:n_trees
@@ -105,5 +115,5 @@ function build_forest(
         throw("rng must of be type Integer or Random.AbstractRNG")
     end
 
-    return Ensemble{S, T}(forest)
+    return EnsembleOOB{S, T}(forest)
 end

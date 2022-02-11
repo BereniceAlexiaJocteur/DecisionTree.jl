@@ -48,6 +48,17 @@ function _convert(
     end
 end
 
+
+function _convertOOB(
+        node   :: treeclassifier.NodeMeta{S},
+        list   :: AbstractVector{T},
+        labels :: AbstractVector{T}
+        oob    :: AbstractMatrix{S}) where {S, T}
+
+    tree = _convert(node, list, labels)
+    return TreeOOB{S, T}(tree, oob)
+end
+
 ################################################################################
 
 function build_stump(
@@ -102,7 +113,8 @@ function build_tree(
         min_purity_increase = Float64(min_purity_increase),
         rng                 = rng)
 
-    return _convert(t.root, t.list, labels[t.labels])
+    return _convertOOB(t.root, t.list, labels[t.labels],
+        features[setdiff(collect(1:length(labels)), t.labels)])
 end
 
 function prune_tree(tree::LeafOrNode{S, T}, purity_thresh=1.0) where {S, T}
@@ -163,6 +175,10 @@ function apply_tree(tree::LeafOrNode{S, T}, features::AbstractMatrix{S}) where {
     end
 end
 
+function apply_tree(tree::TreeOOB) where {S, T}
+    return apply_tree(tree.tree, tree.oobfeat)
+end
+
 """    apply_tree_proba(::Node, features, col_labels::AbstractVector)
 
 computes P(L=label|X) for each row in `features`. It returns a `N_row x
@@ -214,7 +230,7 @@ function build_forest(
     t_samples = length(labels)
     n_samples = floor(Int, partial_sampling * t_samples)
 
-    forest = Vector{LeafOrNode{S, T}}(undef, n_trees)
+    forest = Vector{ForestOOB{S, T}}(undef, n_trees)
 
     entropy_terms = util.compute_entropy_terms(n_samples)
     loss = (ns, n) -> util.entropy(ns, n, entropy_terms)
@@ -251,7 +267,7 @@ function build_forest(
         throw("rng must of be type Integer or Random.AbstractRNG")
     end
 
-    return Ensemble{S, T}(forest)
+    return EnsembleOOB{S, T}(forest)
 end
 
 function apply_forest(forest::Ensemble{S, T}, features::AbstractVector{S}) where {S, T}
@@ -275,6 +291,20 @@ function apply_forest(forest::Ensemble{S, T}, features::AbstractMatrix{S}) where
         predictions[i] = apply_forest(forest, features[i, :])
     end
     return predictions
+end
+
+function apply_forest(forest::EnsembleOOB{S, T}) where {S, T}
+    n_trees = length(forest)
+    votes = Array{T}(undef, n_trees)
+    for i in 1:n_trees
+        votes[i] = apply_tree(forest.trees[i])
+    end
+
+    if T <: Float64
+        return mean(votes)
+    else
+        return majority_vote(votes)
+    end
 end
 
 """    apply_forest_proba(forest::Ensemble, features, col_labels::AbstractVector)
