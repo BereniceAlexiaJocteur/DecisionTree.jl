@@ -12,7 +12,7 @@ end
 
 function _convertOOB(
         node   :: treeregressor.NodeMeta{S},
-        labels :: Array{T}
+        labels :: Array{T},
         oob    :: AbstractMatrix{S}) where {S, T}
 
     tree = _convert(node, labels)
